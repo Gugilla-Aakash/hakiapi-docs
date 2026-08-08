@@ -47,6 +47,7 @@ export async function generateMetadata({ params }: MetadataProps): Promise<Metad
 
   return {
     title: titleFormatted,
+    description: `Explore the ${titleFormatted} example implementation built with HakiAPI.`,
   };
 }
 

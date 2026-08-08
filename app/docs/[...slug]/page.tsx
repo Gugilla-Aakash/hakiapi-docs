@@ -82,6 +82,7 @@ export async function generateMetadata({ params }: MetadataProps): Promise<Metad
 
   return {
     title: titleFormatted, // Uses the template "%s | HakiAPI" defined in root layout[cite: 1]
+    description: `Learn how to use ${titleFormatted} with HakiAPI. Build production-grade Python API SDKs with built-in resilience, retries, and clean architecture.`,
   };
 }
 
