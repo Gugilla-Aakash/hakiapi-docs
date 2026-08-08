@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL || "https://hakiapi.dev"
+    process.env.NEXT_PUBLIC_SITE_URL || "https://hakiapi.pages.dev"
   ),
   title: {
     template: "%s | HakiAPI",
