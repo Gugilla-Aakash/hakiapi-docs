@@ -1,0 +1,79 @@
+# Google Calendar Client
+
+`GoogleCalendarClient` is a bundled HakiAPI client for the Google Calendar API v3, built on top of `BaseAPIClient`. Like `GmailClient`, it uses **resource-based routing** — endpoints are grouped under `.calendars` and `.events` attributes rather than as flat methods on the client.
+
+## Initialization
+
+```python
+from hakiapi import GoogleCalendarClient
+
+# token is required — GoogleCalendarClient has no unauthenticated mode
+cal = GoogleCalendarClient(token=access_token)
+```
+
+- `base_url` is fixed to `https://www.googleapis.com/calendar/v3/`.
+- `token` is required and is always wrapped in `BearerTokenAuth`.
+- The token must be a valid OAuth 2.0 access token with the appropriate Calendar scope (e.g. `calendar.readonly` for read-only access, or `calendar` for full read/write) — see [Interactive OAuth 2.0](#interactive-oauth-20-google) for getting one via `GoogleOAuthFlow`.
+
+Supports the context manager protocol like every `BaseAPIClient` subclass:
+
+```python
+with GoogleCalendarClient(token=access_token) as cal:
+    cal.events.today()
+```
+
+## Resources
+
+| Resource | Attribute | Wraps |
+|---|---|---|
+| `CalendarsResource` | `cal.calendars` | `users/me/calendarList` |
+| `CalendarEventsResource` | `cal.events` | `calendars/{calendar_id}/events` |
+
+### `calendars` — `CalendarsResource`
+
+```python
+cal.calendars.list(max_pages=1)
+```
+
+`list(max_pages=None, **kwargs)` lazily yields every entry on the authenticated user's calendar list (`users/me/calendarList`) via the shared `paginate()` helper. Pass `max_pages` to cap how many pages are fetched; omit it to walk every page.
+
+### `events` — `CalendarEventsResource`
+
+```python
+cal.events.get(event_id)
+cal.events.list(calendar_id="primary")
+cal.events.today()
+cal.events.upcoming(max_results=5)
+cal.events.create({"summary": "...", "start": {...}, "end": {...}})
+cal.events.delete(event_id)
+```
+
+Every method takes `calendar_id` as a keyword-or-positional argument, defaulting to `"primary"` (the user's main calendar).
+
+- **`get(event_id, calendar_id="primary", **kwargs)`** fetches the full details of one event by ID.
+- **`list(calendar_id="primary", max_pages=None, **kwargs)`** lazily yields all events on a calendar, delegating straight to `paginate()` against `calendars/{calendar_id}/events`.
+- **`today(calendar_id="primary", **kwargs)`** fetches every event between midnight today and midnight tomorrow, **UTC** — not the local timezone. It computes `timeMin`/`timeMax` from `datetime.now(timezone.utc)`, sets `singleEvents=True` (expanding recurring events into individual instances) and `orderBy="startTime"`, then calls `list()`.
+- **`upcoming(calendar_id="primary", max_results=10, **kwargs)`** fetches the next `max_results` events starting from right now. Sets `timeMin` to the current UTC time, `maxResults`, `singleEvents=True`, and `orderBy="startTime"`. Unlike `list()` and `today()`, this is hardcoded to `max_pages=1` — it's meant to return a single page of the soonest events, not paginate through everything; any `max_pages` you pass is discarded.
+- **`create(payload, calendar_id="primary", **kwargs)`** creates a new event. `payload` must include `start` and `end` datetime objects in the format the Calendar API expects (e.g. `{"dateTime": "2025-01-01T10:00:00Z"}`), plus whatever other event fields you want (`summary`, `attendees`, etc.).
+- **`delete(event_id, calendar_id="primary", **kwargs)`** deletes an event. A successful delete typically returns Google's empty `204` response.
+
+> **Note:** `today()` and `upcoming()` both auto-fill `timeMin`/`timeMax`, force `singleEvents=True`, and sort by `startTime` — you only need to supply the calendar ID (and, for `upcoming()`, optionally `max_results`).
+
+## Errors
+
+`GoogleCalendarClient` inherits `BaseAPIClient`'s exception handling, so the same typed hierarchy applies:
+
+```python
+from hakiapi.core.exceptions import AuthenticationError, RateLimitError, HakiAPIError
+
+try:
+    cal.events.upcoming(max_results=5)
+except AuthenticationError:
+    print("Access token missing, expired, or lacks Calendar scope.")
+except RateLimitError as e:
+    print(f"Rate limited — retry after {e.retry_after}s")
+except HakiAPIError as e:
+    print(f"Calendar API error: {e}")
+```
+
+An expired OAuth access token surfaces as `AuthenticationError` (`401`/`403`) — pair `GoogleCalendarClient` with `GoogleOAuthFlow` and `refresh_access_token()` (see the main HakiAPI docs on OAuth 2.0) to keep a long-running process authenticated without manual re-consent.

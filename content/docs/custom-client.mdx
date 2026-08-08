@@ -1,0 +1,136 @@
+# Create Your Own Client
+
+Every bundled client (`GitHubClient`, `GmailClient`, `GoogleCalendarClient`) is just a subclass of `BaseAPIClient` — there's nothing special about them that you can't do yourself. Subclass `BaseAPIClient`, point it at a base URL, and define your endpoints as plain methods. Authentication, retries, timeout handling, and typed exceptions are all inherited automatically, so you only write endpoint logic.
+
+## 1. Inherit from `BaseAPIClient`
+
+Create a class that extends `BaseAPIClient`. In `__init__`, call `super().__init__()` with the target service's `base_url` and, if the API needs it, an `auth` handler:
+
+```python
+from hakiapi import BaseAPIClient
+from hakiapi.core.auth import BearerTokenAuth
+
+class WeatherClient(BaseAPIClient):
+    def __init__(self, **kwargs):
+        super().__init__(base_url="https://api.open-meteo.com/v1", **kwargs)
+```
+
+If your API requires credentials, pass one of HakiAPI's auth strategies (`BearerTokenAuth`, `HeaderApiKeyAuth`, `QueryApiKeyAuth`, `HmacAuth`, `OAuth2Auth`) through to `super().__init__()`:
+
+```python
+class MyServiceClient(BaseAPIClient):
+    def __init__(self, api_key: str, **kwargs):
+        kwargs["auth"] = HeaderApiKeyAuth("X-API-Key", api_key)
+        super().__init__(base_url="https://api.myservice.com/v1", **kwargs)
+```
+
+Any extra `**kwargs` you accept (`timeout`, `max_retries`, `backoff_factor`, etc.) pass straight through to `BaseAPIClient`, so callers can tune retry/timeout behavior per client instance without you having to re-expose every option by hand.
+
+## 2. Implement Convenience Methods
+
+`BaseAPIClient` exposes `get`, `post`, `put`, `patch`, and `delete`, all routed through the same internal `_request()` pipeline — every call you make through them already gets:
+
+- The retry-mounted session (exponential backoff on `429/500/502/503/504`).
+- Timeout handling, raised as `RequestTimeoutError`.
+- Status-code-to-exception mapping (`RateLimitError`, `AuthenticationError`, `ClientError`, `ServerError`).
+- Automatic JSON parsing of the response body into a native `dict`/`list`, falling back to `response.text` if the body isn't valid JSON.
+
+Define your endpoints as plain methods that call these:
+
+```python
+class WeatherClient(BaseAPIClient):
+    def __init__(self, **kwargs):
+        super().__init__(base_url="https://api.open-meteo.com/v1", **kwargs)
+
+    def get_weather(self, latitude: float, longitude: float):
+        return self.get(
+            "forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "current_weather": True,
+            },
+        )
+```
+
+That's the whole client — no manual `requests.Session`, no retry loop, no `response.raise_for_status()` branching.
+
+## Complete Example
+
+```python
+from hakiapi import BaseAPIClient
+
+class WeatherClient(BaseAPIClient):
+    def __init__(self, **kwargs):
+        super().__init__(base_url="https://api.open-meteo.com/v1", **kwargs)
+
+    def get_weather(self, latitude: float, longitude: float):
+        return self.get(
+            "forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "current_weather": True,
+            },
+        )
+
+if __name__ == "__main__":
+    # Hyderabad, Telangana, India
+    with WeatherClient() as client:
+        weather = client.get_weather(latitude=17.385, longitude=78.4867)
+        print(weather["current_weather"])
+```
+
+`WeatherClient` needs no `auth` argument at all here, since Open-Meteo's forecast endpoint is public — `BaseAPIClient` only attaches auth if you pass one in.
+
+## Getting the Raw Response
+
+Sometimes you need more than the parsed body — response headers, status code, or cookies. Pass `raw_response=True` to any of `get`/`post`/`put`/`patch`/`delete` to get the raw `requests.Response` object back instead of the parsed JSON/text:
+
+```python
+def get_weather_raw(self, latitude: float, longitude: float):
+    response = self.get(
+        "forecast",
+        params={"latitude": latitude, "longitude": longitude, "current_weather": True},
+        raw_response=True,
+    )
+    print(response.headers.get("X-RateLimit-Remaining"))
+    return response.json()
+```
+
+This is exactly what `paginate()` uses internally to read pagination headers like GitHub's `Link` header — worth reaching for any time your endpoint needs response metadata, not just the body.
+
+## Adding Pagination
+
+If your API returns paginated lists, you don't need to hand-write the `while` loop either — `paginate()` auto-detects several common pagination styles (`Link` header, `data`/`meta.next_token`, `messages`/`nextPageToken`, `items`/`nextPageToken`) and yields lazily:
+
+```python
+from hakiapi.core.paginator import paginate
+
+class MyServiceClient(BaseAPIClient):
+    def __init__(self, api_key: str, **kwargs):
+        kwargs["auth"] = HeaderApiKeyAuth("X-API-Key", api_key)
+        super().__init__(base_url="https://api.myservice.com/v1", **kwargs)
+
+    def get_all_items(self, **kwargs):
+        yield from paginate(self, "items", **kwargs)
+```
+
+If your API's pagination shape doesn't match any of the styles `paginate()` recognizes, it raises `ValueError("Unexpected pagination response: ...")` — in that case, write the loop by hand using `raw_response=True` to inspect headers or body fields directly.
+
+## Error Handling
+
+Since your client's methods all route through `_request()`, they raise the same typed exception hierarchy as the bundled clients — catch `HakiAPIError` (or a more specific subclass) around any call:
+
+```python
+from hakiapi.core.exceptions import RateLimitError, HakiAPIError
+
+try:
+    client.get_weather(latitude=17.385, longitude=78.4867)
+except RateLimitError as e:
+    print(f"Rate limited — retry after {e.retry_after}s")
+except HakiAPIError as e:
+    print(f"Request failed: {e}")
+```
+
+No extra work needed here — this comes for free from subclassing `BaseAPIClient`.
