@@ -1,0 +1,100 @@
+# Circuit Breaker Protection
+
+The Circuit Breaker pattern prevents cascading failures by temporarily blocking requests to a downstream service that's experiencing outages or severe degradation, instead of letting every caller keep hammering a service that's already down.
+
+<CircuitBreakerDemo />
+
+<Callout type="note" title="Not wired in automatically">
+`CircuitBreaker` is a standalone, thread-safe utility — it isn't attached to `BaseAPIClient` by default. You apply it yourself as a decorator around whichever calls you want protected.
+</Callout>
+
+---
+
+## How It Works
+
+`CircuitBreaker` tracks consecutive failures and moves through three states:
+
+<Steps items={[
+  { title: "Closed", content: "Normal operation. Every call passes through. A success resets the failure count to zero; a failure increments it." },
+  { title: "Open", content: "The failure_threshold was reached. Every call is blocked instantly and raises CircuitOpenError without the wrapped function ever running." },
+  { title: "Half-Open", content: "Once recovery_timeout has elapsed since the last failure, the circuit stops blocking calls. A success moves it back to Closed; a failure moves it straight back to Open." }
+]} />
+
+<Callout type="warning" title="Half-Open doesn't limit itself to one trial call">
+The classic circuit breaker pattern allows exactly one trial request through in the half-open state. This implementation doesn't enforce that — it checks the state once per call, and any call made while the breaker is Half-Open will run the wrapped function. If several calls happen concurrently right after the cooldown elapses, all of them go through, not just one.
+</Callout>
+
+The `OPEN → HALF_OPEN` transition happens lazily: nothing runs on a timer. Instead, every time `.state` is read (which happens at the start of every wrapped call), it checks whether `recovery_timeout` has elapsed since the last failure and flips to `HALF_OPEN` if so.
+
+---
+
+## Using It as a Decorator
+
+`CircuitBreaker` instances are callables, so you use them directly as a decorator on a synchronous function:
+
+```python
+from hakiapi.core.circuit_breaker import CircuitBreaker, CircuitOpenError
+
+breaker = CircuitBreaker(failure_threshold=5, recovery_timeout=30.0)
+
+@breaker
+def fetch_data():
+    return client.get("some/endpoint")
+
+try:
+    fetch_data()
+except CircuitOpenError as e:
+    print(f"Blocked, retry in {e.retry_after:.1f}s")
+```
+
+<Callout type="tip" title="Share one instance">
+Create a single `CircuitBreaker` and reuse it across every call site that hits the same downstream service. A breaker created fresh per-call never accumulates failures, so it can never open.
+</Callout>
+
+<Callout type="warning" title="Synchronous callables only">
+The decorator wraps `func(*args, **kwargs)` directly and returns its result. Don't decorate an `async def` function with it — the wrapper isn't awaited, so it won't work with coroutines.
+</Callout>
+
+---
+
+## Which Exceptions Count as Failures
+
+By default, only `HakiAPIError` (and its subclasses) count toward the failure threshold — that's what `expected_exceptions` defaults to. Any other exception type propagates immediately without being caught, counted, or affecting the circuit's state at all.
+
+```python
+from hakiapi.core.exceptions import ServerError, RequestTimeoutError
+
+# Only count server errors and timeouts — a 404 (ClientError) won't trip the breaker
+breaker = CircuitBreaker(expected_exceptions=(ServerError, RequestTimeoutError))
+```
+
+<Callout type="info" title="Narrowing expected_exceptions">
+This is useful when you don't want client-side mistakes (bad request bodies, 404s, etc.) to open a circuit that should really only react to the downstream service actually being unhealthy.
+</Callout>
+
+---
+
+## Constructor Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `failure_threshold` | `int` | `5` | Consecutive failures required to move from Closed to Open. Clamped to a minimum of `1`. |
+| `recovery_timeout` | `float` | `30.0` | Seconds to wait after the last failure before allowing a Half-Open trial. Clamped to a minimum of `0.1`. |
+| `expected_exceptions` | `tuple[type[Exception], ...]` | `(HakiAPIError,)` | Exception types that count as failures. Anything else propagates without affecting circuit state. |
+
+## CircuitOpenError
+
+Raised in place of calling the wrapped function whenever the circuit is `OPEN`. A subclass of `HakiAPIError`.
+
+- **`message`** — defaults to `"Circuit breaker is OPEN. Request blocked."`, but the decorator overrides it with a message naming the blocked function.
+- **`retry_after`** — seconds remaining in the cooldown window, computed from `recovery_timeout` minus time elapsed since the last failure. Never negative.
+
+```python
+except CircuitOpenError as e:
+    print(f"{e}, retry in {e.retry_after:.1f}s")
+```
+
+## What's Next?
+
+- See [exceptions](/core-concepts/exceptions) for the rest of the `HakiAPIError` hierarchy `expected_exceptions` draws from.
+- See [retries](/core-concepts/retries) for how `CircuitBreaker` compares to (and can be combined with) HakiAPI's retry/backoff logic.

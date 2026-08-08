@@ -1,0 +1,133 @@
+# Exceptions
+
+HakiAPI raises a typed exception for every failure mode instead of a generic `HTTPError`, so you can catch exactly the failure you care about — a 429, an expired token, a dead network connection — without parsing status codes yourself.
+
+```python
+from hakiapi.core.exceptions import RateLimitError
+
+try:
+    client.get("some/endpoint")
+except RateLimitError as e:
+    print(f"Rate limited, retry after {e.retry_after}s")
+```
+
+<Callout type="note" title="Everything inherits from HakiAPIError">
+If you don't need to distinguish failure types, catching `HakiAPIError` catches everything HakiAPI can raise.
+</Callout>
+
+---
+
+## Exception Hierarchy
+
+```
+HakiAPIError
+├── ClientError            (4xx)
+│   ├── RateLimitError      (429)
+│   └── AuthenticationError (401 / 403)
+├── ServerError             (5xx)
+└── RequestTimeoutError     (network-level timeout)
+```
+
+`ClientError` and `ServerError` are raised directly for status codes that don't have a more specific exception — a plain 404 raises `ClientError`, a plain 502 raises `ServerError`. `RateLimitError` and `AuthenticationError` are more specific `ClientError` subclasses raised for particular status codes.
+
+`RequestTimeoutError` sits outside the status-code branches entirely: a timeout happens at the network level, before any HTTP response exists, so it inherits directly from `HakiAPIError` rather than from `ClientError` or `ServerError`.
+
+---
+
+## HakiAPIError
+
+The base class for every exception HakiAPI raises. Every subclass accepts and stores the same three pieces of information:
+
+- **`message`** — human-readable description of what went wrong.
+- **`status_code`** — the HTTP status code, if the failure came from an HTTP response.
+- **`response`** — the raw response object, if one exists, for cases where you need more than the message.
+
+`str(exc)` prefixes the message with the status code when one is present:
+
+```python
+try:
+    client.get("some/endpoint")
+except HakiAPIError as e:
+    print(e)
+    # "[404] Not Found"        — status_code is set
+    # "Connection reset"       — status_code is None
+```
+
+## ClientError
+
+Raised for any 4xx response that doesn't map to a more specific exception (`RateLimitError`, `AuthenticationError`). Adds no attributes beyond the base class.
+
+## ServerError
+
+Raised for any 5xx response. Adds no attributes beyond the base class.
+
+<Callout type="info" title="Retrying server errors">
+`ServerError` is the one you generally want to retry — a 5xx usually reflects a transient problem on the API's side. `ClientError` (and its subclasses other than `RateLimitError`) usually reflects a request that won't succeed no matter how many times you send it.
+</Callout>
+
+## RateLimitError
+
+Raised for HTTP `429 Too Many Requests`. A `ClientError` subclass, so `except ClientError` catches it too — catch `RateLimitError` specifically when you want to act on `retry_after`.
+
+```python
+except RateLimitError as e:
+    print(f"Rate limited, retry after {e.retry_after}s")
+```
+
+- **`retry_after`** — seconds to wait before retrying, if the API provided one; otherwise `None`.
+- **`status_code`** — defaults to `429`, but can be overridden if a caller has a reason to.
+
+## AuthenticationError
+
+Raised for HTTP `401 Unauthorized` and `403 Forbidden`. A `ClientError` subclass.
+
+```python
+except AuthenticationError as e:
+    print(f"Auth failed via {e.auth_method}: {e}")
+```
+
+- **`auth_method`** — which auth strategy was in use when the request failed (e.g. `"oauth2"`, `"api_key"`), if known; otherwise `None`.
+
+<Callout type="warning" title="status_code isn't defaulted here">
+Unlike `RateLimitError`, `AuthenticationError` doesn't default `status_code` to `401`. Whatever raises it is responsible for passing the actual status code (`401` or `403`) explicitly.
+</Callout>
+
+## RequestTimeoutError
+
+Raised when a request times out at the network level — the client never received a response to parse a status code from. Inherits directly from `HakiAPIError`, not from `ClientError` or `ServerError`.
+
+```python
+except RequestTimeoutError as e:
+    print(f"Timed out after {e.timeout_duration}s")
+```
+
+- **`timeout_duration`** — the timeout value, in seconds, that was exceeded.
+- **`status_code`** and **`response`** are always `None` on this exception, since no HTTP response was ever received.
+
+---
+
+## Catching Multiple Failure Types
+
+Because the hierarchy is real inheritance, you can catch as broadly or narrowly as the situation calls for:
+
+```python
+try:
+    client.get("some/endpoint")
+except RateLimitError as e:
+    wait_and_retry(e.retry_after)
+except AuthenticationError:
+    refresh_credentials_and_retry()
+except ServerError:
+    wait_and_retry()  # transient, worth a retry
+except ClientError as e:
+    log_and_give_up(e)  # any other 4xx — not worth retrying
+except RequestTimeoutError:
+    wait_and_retry()
+except HakiAPIError as e:
+    log_and_give_up(e)  # catch-all for anything else
+```
+
+## What's Next?
+
+- See [retries](/core-concepts/retries) for how `ServerError`, `RateLimitError`, and `RequestTimeoutError` interact with HakiAPI's built-in backoff logic.
+- See [authentication](/core-concepts/authentication) for what triggers an `AuthenticationError` across the different auth strategies.
