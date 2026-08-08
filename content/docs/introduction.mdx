@@ -1,0 +1,89 @@
+---
+title: Introduction
+description: Build production-grade Python API SDKs — not boilerplate.
+---
+
+# Introduction
+
+Every API client grows the same infrastructure, in the same order. 
+
+You start with a simple HTTP call. Then you add authentication. Then retries. Then pagination. Then timeout and exception handling. A month later, you've quietly rebuilt the same plumbing you already wrote for the last five projects — different API, identical problems.
+
+**HakiAPI** ends that cycle. It extracts all of that infrastructure into one reusable core, `BaseAPIClient`, so every client you build on top of it inherits the same battle-tested behavior automatically. You stop writing infrastructure, and you start writing endpoint logic.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" href="/docs/quick-start">
+    Get a working client with built-in retries running in under five minutes.
+  </Card>
+  <Card title="Core Architecture" href="/docs/architecture">
+    Understand the inner loop and the pieces that make HakiAPI tick.
+  </Card>
+</CardGroup>
+
+---
+
+## The Integration Dilemma
+
+If you've built more than one API integration in Python, this breakdown will feel uncomfortably familiar. Every row on the left is a bug waiting to happen. Every row on the right is something HakiAPI has already tested for you.
+
+| Feature | Raw `requests` | HakiAPI Core |
+| :--- | :--- | :--- |
+| **Retry Logic** | Wire up your own `urllib3.Retry` and custom `HTTPAdapter`. | Exponential backoff on `429/500/502/503/504` built into every client. |
+| **Pagination** | Write a custom `while` loop per API's specific pagination style. | Auto-detects Link-header, `data`/`meta`, and `items`/`token` styles. |
+| **Error Handling** | Manually branch on `response.status_code` everywhere. | A typed, catchable exception hierarchy carrying the original response. |
+| **OAuth 2.0 Flow** | Spin up a redirect server and parse the callback yourself. | Builds the consent URL, catches the redirect, and exchanges the code. |
+| **Token Vault** | Read/write a JSON file yourself and hope nothing corrupts it. | Writes atomically with temp files, `os.replace`, and strict `0600` permissions. |
+| **Cascading Fails** | A struggling downstream service keeps getting hammered. | A circuit breaker trips open, fails fast, and auto-probes recovery. |
+
+<Callout type="success" title="Production Default">
+  HakiAPI ensures that the code that runs fine at 2 PM on your local machine survives when the network hiccups at 2 AM in production.
+</Callout>
+
+---
+
+## What you get out of the box
+
+<AccordionGroup>
+  <Accordion title="Automatic Retries & Circuit Breakers" defaultOpen={true}>
+    Every client session mounts an adapter with exponential backoff on `429/500/502/503/504`, deferring status handling to HakiAPI's own typed exceptions. It includes a thread-safe `CLOSED → OPEN → HALF_OPEN` state machine that fails fast during an outage and automatically probes for recovery.
+  </Accordion>
+  
+  <Accordion title="Smart Pagination Engine">
+    The `paginate()` method auto-detects GitHub-style Link headers, Twitter-style `meta.next_token`, Gmail-style `messages` + `nextPageToken`, and Calendar-style `items` + `nextPageToken` — yielding them all as one lazy generator.
+  </Accordion>
+
+  <Accordion title="Multiple Auth Strategies">
+    Bearer tokens, header API keys, query API keys, HMAC request signing, and OAuth2 are all available as drop-in `AuthBase` implementations.
+  </Accordion>
+
+  <Accordion title="Interactive OAuth 2.0 & Atomic Storage">
+    `GoogleOAuthFlow` drives the full Authorization Code flow — builds the consent URL, opens the system browser, boots a one-shot local server to catch the redirect, validates the CSRF state token, and exchanges the code for tokens. `FileTokenStore` persists tokens by writing to a temp file and swapping it in with `os.replace()`, ensuring a crash mid-write can never corrupt your token file.
+  </Accordion>
+
+  <Accordion title="First-Class Async Support">
+    `AsyncBaseAPIClient` is a fully `async`/`await`, `httpx`-powered counterpart to the sync client — providing the exact same backoff, exceptions, and safety guarantees.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Functional Code: See it in action
+
+HakiAPI ships with ready-to-use clients for **GitHub**, **Gmail**, and **Google Calendar** — but it's not limited to them. Building your own client takes minutes, not days.
+
+### 1. Using a Bundled Client
+Three lines of setup, and pagination boilerplate completely disappears:
+
+```python
+from hakiapi.clients.github import GitHubClient
+from hakiapi.core.exceptions import RateLimitError
+
+# 1. Context manager automatically handles session cleanup
+with GitHubClient() as github:
+    try:
+        # 2. Lazily walks every page of the user's public repos automatically
+        for repo in github.get_all_user_repos("torvalds"):
+            print(repo["name"])
+            
+    except RateLimitError as e:
+        print(f"Hit GitHub's limit. Reset at: {e.response.headers.get('x-ratelimit-reset')}")

@@ -1,0 +1,60 @@
+# Installation
+
+HakiAPI is designed to be lightweight and easy to integrate into any existing Python ecosystem. The core package pulls in only two dependencies — everything else is opt-in.
+
+<Callout type="info" title="Requirements">
+  HakiAPI requires **Python 3.10** or higher. We highly recommend using a virtual environment.
+</Callout>
+
+## Standard Installation
+
+Install the package directly from PyPI using pip:
+
+```bash
+pip install hakiapi
+```
+
+This installs the core framework — `BaseAPIClient`, auth strategies, retries, pagination, typed exceptions, and the bundled `GitHubClient`, `GmailClient`, and `GoogleCalendarClient` — along with its two dependencies, `requests` and `urllib3`.
+
+## Optional: Async Support
+
+`AsyncBaseAPIClient` is built on [`httpx`](https://www.python-httpx.org/), which isn't installed by default so the core package stays lean. Add it explicitly if you want the async client:
+
+```bash
+pip install httpx
+```
+
+<Callout type="warning" title="Don't skip this">
+  Importing `hakiapi.core.async_base_client` without `httpx` installed will raise an `ImportError`. If you're only using the sync clients, you can skip this entirely.
+</Callout>
+
+## Development Installation
+
+Want to run the test suite or contribute a fix? Install the `dev` extra, which pulls in `pytest` and the other tooling used across HakiAPI's 340+ tests:
+
+```bash
+pip install hakiapi[dev]
+pytest
+```
+
+## Building from Source
+
+If you want to test the latest bleeding-edge features or contribute to the framework, clone the repository and install it in editable mode:
+
+```bash
+git clone https://github.com/Gugilla-Aakash/hakiapi.git
+cd hakiapi
+pip install -e .
+```
+
+Editable installs pick up your local changes immediately — no reinstall needed between edits.
+
+## Verifying Installation
+
+Confirm everything is wired up correctly:
+
+```bash
+python -c "import hakiapi; print(hakiapi.__version__)"
+```
+
+If that prints a version number without errors, you're ready to go. Head to the [Quick Start](/quickstart) to build your first client.
