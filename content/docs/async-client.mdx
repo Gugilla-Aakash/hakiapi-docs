@@ -1,0 +1,323 @@
+# AsyncBaseAPIClient
+
+`AsyncBaseAPIClient` is HakiAPI's asynchronous HTTP client. It provides connection handling, retries with backoff, typed exceptions, and request validation on top of [httpx](https://www.python-httpx.org/).
+
+Built on top of `httpx.AsyncClient`, it provides HTTP/2 support, connection pooling, and asyncio-native networking. Bundled clients such as `GmailClient` and `GitHubClient` build on top of it.
+
+Use `AsyncBaseAPIClient` directly when you're wrapping an API that HakiAPI doesn't provide a bundled client for yet.
+
+## Requirements
+
+`AsyncBaseAPIClient` uses `httpx.AsyncClient` as its transport. Install `httpx` before using the client:
+
+```bash copy
+pip install httpx
+````
+
+## Quick Start
+
+```python copy
+import asyncio
+
+from hakiapi.core.async_base_client import AsyncBaseAPIClient
+
+
+async def main():
+    async with AsyncBaseAPIClient(
+        base_url="https://api.github.com"
+    ) as client:
+        user = await client.get("users/torvalds")
+        print(user["name"])
+
+
+asyncio.run(main())
+```
+
+## Constructor
+
+| Parameter            | Type                     | Default            | Description                                                                                               |
+| -------------------- | ------------------------ | ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `base_url`           | `str`                    | —                  | Root URL for every request. Must use `http` or `https` and include a host. Trailing slashes are stripped. |
+| `auth`               | `Any \| None`            | `None`             | Authentication configuration passed directly to `httpx.AsyncClient(auth=...)`.                            |
+| `timeout`            | `float`                  | `10.0`             | Default per-request timeout, in seconds. Can be overridden for individual requests.                       |
+| `max_retries`        | `int`                    | `3`                | Maximum number of retry attempts for retryable failures. Values below `0` are clamped to `0`.             |
+| `backoff_factor`     | `float`                  | `0.5`              | Base multiplier for exponential backoff between retries. Values below `0.0` are clamped to `0.0`.         |
+| `max_response_bytes` | `int`                    | `10485760` (10 MB) | Maximum allowed response size. Responses larger than this raise `HakiAPIError`.                           |
+| `headers`            | `dict[str, str] \| None` | `None`             | Headers merged over the default headers. User-provided values take precedence.                            |
+
+The default headers include:
+
+```python copy
+{
+    "User-Agent": "hakiapi-async-client/1.0"
+}
+```
+
+The underlying `httpx.AsyncClient` is created immediately during initialization with redirects disabled:
+
+```python copy
+follow_redirects=False
+```
+
+## Lifecycle
+
+`AsyncBaseAPIClient` maintains an open connection pool, so it must eventually be closed.
+
+The recommended approach is to use the async context manager:
+
+```python copy
+async with AsyncBaseAPIClient(
+    base_url="https://api.example.com"
+) as client:
+    ...
+# The connection pool is closed automatically.
+```
+
+If you don't use the context manager, call `close()` explicitly:
+
+```python copy
+client = AsyncBaseAPIClient(
+    base_url="https://api.example.com"
+)
+
+try:
+    ...
+finally:
+    await client.close()
+```
+
+### `close()` Is Idempotent
+
+Calling `close()` more than once is safe. After the first call, subsequent calls are no-ops.
+
+## Request Validation
+
+`AsyncBaseAPIClient` validates both the base URL and endpoint before sending a request. These checks help prevent requests from accidentally escaping the host you intended to communicate with.
+
+### Base URL
+
+The `base_url` must:
+
+* Use either `http` or `https`.
+* Include a host.
+
+Invalid base URLs raise `ValueError` during client construction.
+
+### Endpoint
+
+Endpoints passed to `.get()`, `.post()`, `.put()`, `.delete()`, or `.patch()` must be relative paths.
+
+Absolute URLs and host-qualified paths are rejected before the request is sent:
+
+```python copy
+await client.get("users/torvalds")
+# Fine — relative path.
+
+await client.get("https://evil.com/steal")
+# Raises ValueError — request is never sent.
+
+await client.get("//evil.com/steal")
+# Raises ValueError — request is never sent.
+```
+
+These checks prevent an endpoint from silently overriding the configured `base_url`.
+
+### Validation Errors Are Not Retried
+
+Validation happens before the retry loop begins. A malformed `base_url`, host-qualified endpoint, or invalid request configuration fails immediately with `ValueError` rather than being retried.
+
+## Retries & Backoff
+
+Retries happen inside a single request. A single call such as `client.get()` may transparently issue multiple HTTP requests before returning a response or raising an exception.
+
+A request is retried when either of the following occurs, up to `max_retries` times:
+
+* A network-level failure.
+* A retryable HTTP status code.
+
+### Network Failures
+
+Network-level failures include:
+
+* `httpx.TimeoutException`, which is mapped to `RequestTimeoutError`.
+* Other `httpx.RequestError` exceptions, which are mapped to `HakiAPIError`.
+
+### Retryable HTTP Status Codes
+
+The following HTTP status codes are retried:
+
+* `429`
+* `500`
+* `502`
+* `503`
+* `504`
+
+Other 4xx and 5xx responses are not retried. They are mapped directly to their corresponding exceptions on the first attempt.
+
+See [Error Mapping](#error-mapping) for details.
+
+## Backoff Timing
+
+If the server returns a `Retry-After` header, it takes precedence over exponential backoff.
+
+The value is:
+
+* Parsed as a number of seconds.
+* Clamped to a maximum of 300 seconds.
+* Ignored if it isn't a plain integer or floating-point value.
+
+HTTP-date values are not supported.
+
+When `Retry-After` isn't available or cannot be parsed, HakiAPI uses exponential backoff with jitter:
+
+```text copy
+delay = backoff_factor * (2 ** attempt) + random(0, backoff_factor)
+```
+
+## Per-Request Timeout
+
+You can override the client's default timeout for an individual request by passing `timeout=`:
+
+```python copy
+response = await client.get(
+    "slow-endpoint",
+    timeout=30.0,
+)
+```
+
+The per-request value applies only to that call and does not change the client's default timeout.
+
+## Error Mapping
+
+Once a response is received and is not going to be retried, its HTTP status code is mapped to a typed exception.
+
+<a id="error-mapping" />
+
+| Status       | Exception             | Description                                                                                   |
+| ------------ | --------------------- | --------------------------------------------------------------------------------------------- |
+| `429`        | `RateLimitError`      | Rate limit exceeded. `retry_after` is populated from the `Retry-After` header when available. |
+| `401`, `403` | `AuthenticationError` | Authentication or authorization failure.                                                      |
+| `400`–`499`  | `ClientError`         | Other client-side HTTP errors.                                                                |
+| `500+`       | `ServerError`         | Server-side HTTP errors.                                                                      |
+| Timeout      | `RequestTimeoutError` | Request timed out.                                                                            |
+
+See [exceptions](/core-concepts/exceptions) for the complete exception hierarchy.
+
+## Response Size Limit
+
+To prevent excessive memory usage, responses are checked against `max_response_bytes`.
+
+After status handling completes, HakiAPI determines the response size using:
+
+1. `Content-Length`, when the header is available.
+2. The actual response body length otherwise.
+
+If the response exceeds `max_response_bytes`, HakiAPI raises `HakiAPIError` instead of returning the response.
+
+The default limit is **10 MB** (`10485760` bytes).
+
+## Return Values
+
+By default, `.get()`, `.post()`, `.put()`, `.delete()`, and `.patch()` parse the response body as JSON.
+
+If JSON parsing fails, the response falls back to plain text:
+
+```text copy
+JSON → [if parsing fails] → text
+```
+
+This allows APIs that return plain-text responses to be handled safely without requiring special-case parsing.
+
+### Raw Responses
+
+Pass `raw_response=True` to return the underlying `httpx.Response` object instead of parsing its body:
+
+```python copy
+response = await client.get(
+    "users/torvalds",
+    raw_response=True,
+)
+
+print(response.headers)
+```
+
+`raw_response=True` is also used internally by [`paginate()`](/core-concepts/pagination), which needs access to `response.links` when handling GitHub-style pagination.
+
+## HTTP Methods
+
+`AsyncBaseAPIClient` provides five convenience methods:
+
+```python copy
+await client.get(endpoint, **kwargs)
+await client.post(endpoint, **kwargs)
+await client.put(endpoint, **kwargs)
+await client.delete(endpoint, **kwargs)
+await client.patch(endpoint, **kwargs)
+```
+
+Each method is a thin wrapper around `_request()`.
+
+Additional keyword arguments are forwarded to the underlying `httpx` request. This includes options such as `params`, `json`, `data`, and `timeout`:
+
+```python copy
+await client.get(
+    "users/torvalds/repos",
+    params={"per_page": 100},
+    timeout=30.0,
+)
+
+await client.post(
+    "repos/example/project/issues",
+    json={"title": "Example issue"},
+)
+```
+
+### HEAD and OPTIONS
+
+`_request()` accepts `HEAD` and `OPTIONS` as valid HTTP methods, but there are no `.head()` or `.options()` convenience methods.
+
+If you need either method, call `_request()` directly:
+
+```python copy
+response = await client._request(
+    "HEAD",
+    "users/torvalds",
+)
+```
+
+## API Reference
+
+### `AsyncBaseAPIClient`
+
+```text copy
+AsyncBaseAPIClient(
+    base_url,
+    auth=None,
+    timeout=10.0,
+    max_retries=3,
+    backoff_factor=0.5,
+    max_response_bytes=10485760,
+    headers=None,
+)
+```
+
+### Methods
+
+| Method       | Description                                                                             |
+| ------------ | --------------------------------------------------------------------------------------- |
+| `get()`      | Send an asynchronous GET request.                                                       |
+| `post()`     | Send an asynchronous POST request.                                                      |
+| `put()`      | Send an asynchronous PUT request.                                                       |
+| `delete()`   | Send an asynchronous DELETE request.                                                    |
+| `patch()`    | Send an asynchronous PATCH request.                                                     |
+| `_request()` | Execute a request using the configured HTTP client. Also supports `HEAD` and `OPTIONS`. |
+| `close()`    | Close the underlying `httpx.AsyncClient` and its connection pool.                       |
+
+## What's Next?
+
+* See [exceptions](/core-concepts/exceptions) for the full exception hierarchy raised by HakiAPI.
+* See [pagination](/core-concepts/pagination) to learn how `paginate()` uses `raw_response=True` to walk multi-page responses.
+* See [circuit breaker](/core-concepts/circuit-breaker) for wrapping calls through this client with failure-based short-circuiting.
+
+`AsyncBaseAPIClient` provides the same high-level API as `BaseAPIClient`, but is designed for asyncio applications using `httpx.AsyncClient`.
+

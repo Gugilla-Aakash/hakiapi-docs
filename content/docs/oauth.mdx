@@ -1,0 +1,161 @@
+---
+title: OAuth Authentication
+description: Authenticate with Google APIs using HakiAPI's OAuth 2.0 flow
+---
+
+# OAuth Authentication
+
+HakiAPI includes a complete OAuth 2.0 implementation for authenticating with Google APIs, with secure token storage and automatic refresh handling.
+
+## Quick start
+
+```python
+from hakiapi.core.auth import OAuth2Auth
+from hakiapi.core.oauth.google import GoogleOAuthFlow
+from hakiapi.core.oauth.token_store import FileTokenStore
+
+flow = GoogleOAuthFlow(
+    client_id="YOUR_CLIENT_ID",
+    client_secret="YOUR_CLIENT_SECRET",
+    scopes=[
+        "https://www.googleapis.com/auth/calendar.readonly",
+    ],
+    store=FileTokenStore("token.json"),
+)
+
+auth = OAuth2Auth(flow)
+
+client = GoogleCalendarClient(auth=auth)
+
+events = client.list_events("primary")
+
+print(events)
+```
+
+That's the whole setup. Everything else on this page explains what happens behind the scenes.
+
+## Architecture
+
+| Component | Responsibility |
+|---|---|
+| `GoogleOAuthFlow` | Drives the authorization flow (browser login, callback, token exchange) |
+| `OAuthToken` | Token model — access token, refresh token, expiry |
+| `TokenStore` | Persistence abstraction for tokens |
+| `refresh_access_token()` | Handles the refresh lifecycle |
+| `OAuth2Auth` | Authentication adapter used by API clients |
+
+## How it works
+
+```text
+First run
+   │
+   ▼
+Browser opens
+   │
+   ▼
+Google login
+   │
+   ▼
+token.json created
+   │
+   ▼
+Subsequent runs
+   │
+   ▼
+Existing token reused
+   │
+   ▼
+Expired token
+   │
+   ▼
+Refresh token used automatically
+```
+
+On the very first run, `GoogleOAuthFlow` opens a browser window for the user to log in and grant consent. The resulting token is written to storage via `TokenStore`. On every later run, the stored token is reused as-is; once it's close to expiring, it's refreshed automatically with no user interaction required.
+
+### Forcing a fresh login
+
+```python
+flow.get_token(force=True)
+```
+
+Passing `force=True` skips any stored token and forces a new browser-based login, even if a valid token already exists. Use this when you need to re-authenticate under a different account or re-grant scopes.
+
+## Token storage
+
+`TokenStore` is a persistence abstraction — the built-in `FileTokenStore` writes tokens to a local file, but you can implement your own `TokenStore` to save tokens in databases, encrypted keychains, cloud secret managers, or any other storage backend.
+
+### File permissions
+
+`FileTokenStore` writes token files with `0600` permissions, meaning only the current user can read or write them. Token files are also written atomically, so a crash or interruption mid-write can't leave behind a corrupted or partial token file.
+
+### Malformed tokens
+
+If a stored `token.json` is malformed, `FileTokenStore` raises a `ValueError` rather than failing silently or producing hard-to-diagnose downstream errors:
+
+```text
+Malformed token.json
+        │
+        ▼
+    raise ValueError
+```
+
+## Refreshing tokens
+
+Access tokens are refreshed proactively rather than reactively. Instead of waiting for a token to expire, HakiAPI refreshes it 30 seconds early:
+
+```python
+expires_at - 30
+```
+
+This buffer prevents in-flight requests from failing because a token happened to expire mid-request.
+
+### Refresh token preservation
+
+When a new access token is issued, Google doesn't always return a new refresh token in the response. HakiAPI accounts for this:
+
+```python
+payload.get("refresh_token", token.refresh_token)
+```
+
+If the refresh response omits a `refresh_token`, the existing one is preserved rather than being overwritten with `None` — a mistake that affects some OAuth libraries.
+
+### Revoked tokens
+
+If Google rejects the refresh token — for example, because it was revoked — the stored token is automatically deleted so the next authentication attempt starts a clean authorization flow, rather than repeatedly failing against a dead token.
+
+## Security
+
+The OAuth implementation includes several security features:
+
+- **Random CSRF `state`** — each authorization request includes a randomly generated `state` parameter, validated on callback to prevent cross-site request forgery.
+- **Localhost callback** — the OAuth redirect is handled by a local callback server rather than a hosted endpoint.
+- **State validation** — the callback rejects any response whose `state` doesn't match the one that was sent.
+- **Timeout** — the local callback server doesn't wait indefinitely for a response.
+- **Secure token permissions (`0600`)** — token files are only readable/writable by the current user.
+- **Atomic writes** — token files are never left in a partially-written state.
+- **Invalid token cleanup** — malformed or revoked tokens are removed rather than left around in a broken state.
+
+## Full flow
+
+```text
+Application
+     │
+     ▼
+OAuth2Auth
+     │
+     ▼
+GoogleOAuthFlow
+     │
+     ▼
+Google Consent Screen
+     │
+     ▼
+Access Token
+     │
+     ▼
+FileTokenStore
+     │
+     ▼
+Authenticated Requests
+```
