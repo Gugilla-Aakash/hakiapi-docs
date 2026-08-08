@@ -1,13 +1,14 @@
+import type { Metadata } from "next"; // <-- Make sure to import Metadata[cite: 1]
 import fs from "fs";
 import path from "path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { compileMDX } from "next-mdx-remote/rsc";
-import remarkGfm from "remark-gfm"; // <-- Required for Markdown Tables & GFM support
+import remarkGfm from "remark-gfm"; // <-- Required for Markdown Tables & GFM support[cite: 1]
 import { mdxComponents } from "@/components/docs/MDXComponents";
 import { DocsPagination } from "@/components/docs/DocsPagination";
 import { TableOfContents } from "@/components/docs/TableOfContents";
-import { DocsActionBar } from "@/components/docs/DocsActionBar"; // <-- 1. Import the action bar
+import { DocsActionBar } from "@/components/docs/DocsActionBar"; // <-- 1. Import the action bar[cite: 1]
 
 export const dynamicParams = false;
 
@@ -60,6 +61,30 @@ export async function generateStaticParams() {
   return Array.from(uniqueMap.values()).map((slug) => ({ slug }));
 }
 
+// Add this function to generate dynamic titles for every doc page[cite: 1]
+interface MetadataProps {
+  params: Promise<{ slug?: string[] }>;
+}
+
+export async function generateMetadata({ params }: MetadataProps): Promise<Metadata> {
+  const resolvedParams = await params;
+  const rawSlugSegments = resolvedParams.slug || ["introduction"];
+  let slugStr = rawSlugSegments.join("/");
+
+  if (slugStr === "quickstart") slugStr = "quick-start";
+  if (slugStr === "retries") slugStr = "retry";
+
+  // Format slug nicely (e.g., "quick-start" -> "Quick Start")
+  const titleFormatted = slugStr
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+  return {
+    title: titleFormatted, // Uses the template "%s | HakiAPI" defined in root layout[cite: 1]
+  };
+}
+
 export default async function DocPage({ params }: PageProps) {
   const resolvedParams = await params;
   const rawSlugSegments = resolvedParams.slug || ["introduction"];
@@ -90,7 +115,7 @@ export default async function DocPage({ params }: PageProps) {
     options: { 
       parseFrontmatter: true,
       mdxOptions: {
-        remarkPlugins: [remarkGfm], // Enables parsing of markdown tables
+        remarkPlugins: [remarkGfm], // Enables parsing of markdown tables[cite: 1]
       },
     },
   });

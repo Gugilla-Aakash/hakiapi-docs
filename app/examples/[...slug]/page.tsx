@@ -1,3 +1,4 @@
+import type { Metadata } from "next"; // <-- Make sure to import Metadata[cite: 2]
 import fs from "fs";
 import path from "path";
 import Link from "next/link";
@@ -6,7 +7,9 @@ import { compileMDX } from "next-mdx-remote/rsc";
 import remarkGfm from "remark-gfm";
 import { mdxComponents } from "@/components/docs/MDXComponents";
 import { TableOfContents } from "@/components/docs/TableOfContents";
+
 export const dynamicParams = false;
+
 interface PageProps {
   params: Promise<{
     slug?: string[];
@@ -26,6 +29,25 @@ export async function generateStaticParams() {
     // Build fallback
   }
   return [];
+}
+
+// Add this function to generate dynamic titles for every example page[cite: 2]
+interface MetadataProps {
+  params: Promise<{ slug?: string[] }>;
+}
+
+export async function generateMetadata({ params }: MetadataProps): Promise<Metadata> {
+  const resolvedParams = await params;
+  const slugStr = resolvedParams.slug?.join("/") || "example";
+
+  const titleFormatted = slugStr
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+  return {
+    title: titleFormatted,
+  };
 }
 
 export default async function ExamplePage({ params }: PageProps) {
