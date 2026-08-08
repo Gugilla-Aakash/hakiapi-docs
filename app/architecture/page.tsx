@@ -7,6 +7,7 @@ import { DocsHeaderNav } from "@/components/docs/DocsHeaderNav";
 
 export const metadata: Metadata = {
   title: "Architecture",
+  description: "Understand the complete request lifecycle of HakiAPI, from core client methods to retries, auth, and exception mapping.",
 };
 
 export default function ArchitecturePage() {

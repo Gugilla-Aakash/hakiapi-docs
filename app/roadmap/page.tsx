@@ -6,6 +6,7 @@ import { DocsHeaderNav } from "@/components/docs/DocsHeaderNav";
 
 export const metadata: Metadata = {
   title: "Roadmap",
+  description: "Explore the HakiAPI release history, upcoming agentic rate-limit governor, and long-term future vision.",
 };
 
 type Status = "released" | "in-progress" | "vision";
