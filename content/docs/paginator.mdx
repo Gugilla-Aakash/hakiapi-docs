@@ -1,0 +1,129 @@
+# Pagination
+
+Every API seems to invent its own pagination scheme. GitHub uses `Link` headers, Twitter/X nests a token inside `meta`, and Google's APIs (Gmail, Calendar, and Drive) return a `nextPageToken` alongside `messages` or `items`.
+
+HakiAPI's `paginate()` detects which style you're dealing with directly from the response shape, so you can walk every page as a single lazy generator instead of writing a pagination loop by hand.
+
+`paginate()` is a lazy generator. Pages are fetched only as you iterate, making it memory-efficient even for large datasets.
+
+```python copy
+from hakiapi import BaseAPIClient
+from hakiapi.core.paginator import paginate
+
+client = BaseAPIClient(
+    base_url="https://api.github.com"
+)
+
+for repo in paginate(client, "users/torvalds/repos"):
+    print(repo["name"])
+```
+
+## Supported APIs
+
+| API             | Pagination Style  |
+| --------------- | ----------------- |
+| GitHub          | ✓ Link headers    |
+| Twitter / X     | ✓ `next_token`    |
+| Gmail           | ✓ `nextPageToken` |
+| Google Calendar | ✓ `nextPageToken` |
+| Google Drive    | ✓ `nextPageToken` |
+
+## How It Works
+
+Fetching a page happens in two steps: first, `paginate()` figures out where the items live in the response body, then it looks for a signal that another page exists.
+
+### 1. Finding the Items
+
+* If the response body is a JSON **list**, that list *is* the items (GitHub-style).
+* If it's a **dict**, `paginate()` checks `data`, then `messages`, then `items`, in that order, and uses whichever key holds a list.
+* If none of those keys are present but `resultSizeEstimate` is `0`, iteration stops silently. This handles a Gmail-specific quirk where an empty result set omits the `messages` key entirely.
+* Any other shape raises `ValueError("Unexpected pagination response: ...")`.
+
+### 2. Finding the Next Page
+
+Once the current page's items are yielded, `paginate()` checks for a next-page signal.
+
+Detection is deterministic. GitHub `Link` headers take precedence, followed by Twitter's `meta.next_token`, then Google's `nextPageToken`:
+
+| Order | Style                       | Detected By                  | Example API                          |
+| ----: | --------------------------- | ---------------------------- | ------------------------------------ |
+|     1 | **Link header**             | `response.links["next"]`     | GitHub                               |
+|     2 | **Token (`meta`)**          | `data["meta"]["next_token"]` | Twitter/X                            |
+|     3 | **Token (`nextPageToken`)** | `data["nextPageToken"]`      | Gmail, Google Calendar, Google Drive |
+
+If none of these signals are found, the generator stops.
+
+## Limiting Pages
+
+Pass `max_pages` to cap how many requests `paginate()` makes, regardless of how many pages the API has left.
+
+The count is checked **before each fetch**, so `max_pages=3` means at most 3 requests — never a partial fourth request.
+
+```python copy
+for item in paginate(
+    client,
+    "some/endpoint",
+    max_pages=3,
+):
+    print(item)
+```
+
+## Passing Query Parameters and Request Options
+
+Any extra keyword arguments are forwarded to the underlying request, and `params` works exactly as it does elsewhere in HakiAPI.
+
+For example, you can pass custom headers:
+
+```python copy
+for repo in paginate(
+    client,
+    "users/torvalds/repos",
+    headers={"Accept": "application/json"},
+):
+    print(repo["name"])
+```
+
+Or pass query parameters:
+
+```python copy
+for item in paginate(
+    client,
+    "search",
+    params={
+        "q": "python",
+        "per_page": 50,
+    },
+):
+    print(item)
+```
+
+## API Reference
+
+### `paginate()`
+
+```text copy
+paginate(
+    client,
+    endpoint,
+    max_pages=None,
+    **kwargs,
+) -> Iterator[Any]
+```
+
+| Parameter   | Type            | Default | Description                                                                                                |
+| ----------- | --------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `client`    | `BaseAPIClient` | —       | API client used to fetch pages.                                                                            |
+| `endpoint`  | `str`           | —       | Relative API endpoint to paginate.                                                                         |
+| `max_pages` | `int \| None`   | `None`  | Maximum number of requests to make.                                                                        |
+| `**kwargs`  | `Any`           | —       | Additional request options forwarded to the underlying request, such as `params`, `headers`, or `timeout`. |
+
+The initial request is made using the supplied `endpoint` and request options. Subsequent pages are automatically fetched using the pagination signal returned by the API.
+
+The generator returns an `Iterator[Any]` and stops when no further page signal is found or when `max_pages` has been reached.
+
+## What's Next?
+
+* See [bundled clients](https://www.google.com/search?q=/quickstart%232-using-a-bundled-client-github) for pagination already wired up.
+* Learn how to [create a custom client](https://www.google.com/search?q=/quickstart%234-creating-a-custom-client) whose list endpoints work with `paginate()` out of the box.
+
+With `paginate()`, every supported pagination style behaves like a single Python iterator, allowing you to focus on processing results instead of managing page tokens.

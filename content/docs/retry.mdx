@@ -1,0 +1,86 @@
+# Retry Engine
+
+Network instability is a guarantee in distributed systems. HakiAPI's retry engine automatically recovers from `429 Rate Limit` and `5xx Server Errors` using exponential backoff — mounted onto every `BaseAPIClient` session by default, so you get it for free.
+
+<RetryAnimation />
+
+## How It Works
+
+`create_retry_adapter()` builds a `urllib3.util.Retry` strategy and wraps it in a `requests.adapters.HTTPAdapter`, which HakiAPI mounts onto the session for both `http://` and `https://`.
+
+Two details matter more than the rest:
+
+<Callout type="info" title="Exponential backoff, urllib3-style">
+Delay between attempts follows urllib3's standard formula: `backoff_factor * (2 ** (retry_number - 1))`. With the default `backoff_factor=1.0`, that's roughly 1s, then 2s, then 4s between the three retries — enough spacing to let a struggling server recover without hammering it.
+</Callout>
+
+<Callout type="warning" title="Errors are deferred, not raised here">
+The adapter is built with `raise_on_status=False`. It exhausts retries and returns the final response as-is — it does **not** raise an exception itself. Turning a `429` or `5xx` into a typed `RateLimitError` or `ServerError` happens one layer up, in `BaseAPIClient._request()`. If you're using `create_retry_adapter()` standalone, you're responsible for checking `response.status_code` yourself.
+</Callout>
+
+---
+
+## What Gets Retried
+
+By default, the adapter retries on the response status codes most likely to mean *"try again, this isn't your fault"*:
+
+| Status | Meaning |
+|---|---|
+| `429` | Too Many Requests |
+| `500` | Internal Server Error |
+| `502` | Bad Gateway |
+| `503` | Service Unavailable |
+| `504` | Gateway Timeout |
+
+Pass your own `status_forcelist` to override this list entirely — for example, to also retry on `408 Request Timeout`.
+
+## Method Filtering
+
+By default, `urllib3.Retry` only retries idempotent methods (`GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS`, `TRACE`) — it won't automatically retry a `POST`, since replaying a non-idempotent request can have side effects (like creating a duplicate resource).
+
+`create_retry_adapter()` exposes `allowed_methods` explicitly so you can widen or narrow that set for APIs where you know retrying a `POST` is safe:
+
+```python
+from hakiapi.core.retry import create_retry_adapter
+
+# Also retry POST requests — only do this if your API's POST endpoints are idempotent
+adapter = create_retry_adapter(allowed_methods=["GET", "POST", "PUT", "DELETE"])
+```
+
+---
+
+## API Reference
+
+<APISignature
+  name="create_retry_adapter"
+  signature="(total_retries=3, backoff_factor=1.0, status_forcelist=None, allowed_methods=None)"
+  returns="HTTPAdapter"
+  parameters={[
+    { name: "total_retries", type: "int", default: "3", description: "Maximum number of retry attempts before the adapter gives up and returns the final response." },
+    { name: "backoff_factor", type: "float", default: "1.0", description: "Multiplier applied to the exponential backoff delay between attempts: backoff_factor * (2 ** (retry_number - 1))." },
+    { name: "status_forcelist", type: "Collection[int] | None", default: "None", description: "HTTP status codes that trigger a retry. Defaults to [429, 500, 502, 503, 504] when not provided." },
+    { name: "allowed_methods", type: "Collection[str] | None", default: "None", description: "HTTP methods eligible for retry. Passed straight through to urllib3's Retry — leave unset to use urllib3's default idempotent-methods-only behavior." }
+  ]}
+/>
+
+---
+
+## Using It Standalone
+
+Every `BaseAPIClient` mounts a retry adapter automatically, so most of the time you'll never call this directly. But if you're building your own `requests.Session` outside HakiAPI's client classes, you can mount it yourself:
+
+```python
+import requests
+from hakiapi.core.retry import create_retry_adapter
+
+session = requests.Session()
+adapter = create_retry_adapter(total_retries=5, backoff_factor=0.5)
+
+session.mount("https://", adapter)
+session.mount("http://", adapter)
+```
+
+## What's Next?
+
+- Pair the retry engine with the [circuit breaker](/circuit-breaker) to fail fast during sustained outages instead of retrying forever.
+- See how retried responses become [typed exceptions](/core-concepts#exception-handling) like `RateLimitError` and `ServerError`.
