@@ -1,0 +1,145 @@
+# GitHub Client
+
+`GitHubClient` is a bundled HakiAPI client for the GitHub REST and GraphQL APIs, built on top of `BaseAPIClient`. It inherits retries, typed exceptions, and auth handling automatically, and adds GitHub-specific helpers for pagination, language aggregation, activity, README checks, and GraphQL contribution data.
+
+## Initialization
+
+```python
+from hakiapi import GitHubClient
+
+# Token is optional — public endpoints work without one,
+# but you'll hit GitHub's much lower unauthenticated rate limit.
+client = GitHubClient(token="ghp_your_secret_token")
+```
+
+Under the hood, the client is preconfigured for GitHub's API:
+
+- `base_url` is set to `https://api.github.com`.
+- If a `token` is passed, it's wrapped in `BearerTokenAuth` and attached automatically.
+- The session sends `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`, and a `User-Agent` header on every request.
+
+Like other `BaseAPIClient` subclasses, it supports the context manager protocol:
+
+```python
+with GitHubClient(token="ghp_...") as gh:
+    gh.get_user("torvalds")
+```
+
+## Profiles & Repositories
+
+```python
+gh.get_user("torvalds")                        # fetch a user's profile
+gh.search_users("location:hyderabad")           # single page of matching users
+gh.get_all_search_users("python")               # auto-paginated generator over search results
+gh.get_user_repos("torvalds")                   # single page of public repos
+gh.get_all_user_repos("torvalds")               # auto-paginated generator over all public repos
+gh.get_repo_languages("torvalds", "linux")      # byte breakdown of languages in one repo
+gh.get_aggregate_user_languages("torvalds")     # sums language bytes across every repo
+```
+
+- **`get_all_user_repos(username, **kwargs)`** paginates automatically via `paginate()`, so it yields every repo lazily instead of one page at a time.
+- **`get_aggregate_user_languages(username, **kwargs)`** walks every repo from `get_all_user_repos()`, calls `get_repo_languages()` on each, and sums byte counts per language into a single `dict[str, int]`. If a language lookup for a given repo raises `HakiAPIError` (e.g. an empty or inaccessible repo), that repo is silently skipped rather than failing the whole aggregation.
+
+## Search & Activity
+
+```python
+gh.get_user_authored_activity("torvalds")
+```
+
+`get_user_authored_activity(username, **kwargs)` runs two GitHub code-search queries (`author:{username} type:pr` and `author:{username} type:issue`) against `search/issues`, each capped at 5 results, and returns:
+
+```python
+{
+    "pull_requests": {"total_count": ..., "recent_items": [...]},
+    "issues": {"total_count": ..., "recent_items": [...]},
+}
+```
+
+## README Checks
+
+```python
+gh.check_readme_exists("torvalds", "linux")               # -> bool
+gh.check_top_repos_readmes("torvalds", repos, top_n=5)     # -> dict[str, bool]
+```
+
+- **`check_readme_exists(owner, repo_name, **kwargs)`** sends a `HEAD` request to GitHub's canonical `repos/{owner}/{repo}/readme` endpoint (5s timeout by default) and returns `True` on `200`, `False` on `404` or any other error — it never raises.
+- **`check_top_repos_readmes(owner, repos, top_n=5, **kwargs)`** takes a list of repo dicts (as returned by `get_user_repos()`), filters out forks, sorts the rest by `stargazers_count` descending, keeps the top `top_n`, and checks each with `check_readme_exists()`. Returns `{repo_name: has_readme}` — only for the repos it checked.
+
+## GraphQL
+
+`GitHubClient` also ships a GraphQL execution layer on top of the same `BaseAPIClient` infrastructure, so GraphQL calls get the same retries, timeout handling, and auth as REST calls.
+
+```python
+with GitHubClient(token="ghp_...") as gh:
+    data = gh.execute_graphql(
+        """
+        query($login: String!) {
+            user(login: $login) {
+                name
+                bio
+            }
+        }
+        """,
+        variables={"login": "torvalds"},
+    )
+    print(data["user"]["name"])
+```
+
+- **`execute_graphql(query, variables=None, **kwargs)`** — the low-level engine. `POST`s `{"query": ..., "variables": ...}` to `/graphql`. GraphQL notoriously returns HTTP `200 OK` even when the query itself failed, with the real error buried in the response body — `execute_graphql` checks for an `"errors"` key and raises `HakiAPIError` joining every message it finds, instead of letting a broken query silently return `None`. On success it returns just the `"data"` portion of the payload (not the full envelope), so you access fields directly (`data["user"]["name"]`, not `data["data"]["user"]["name"]`).
+- **`get_user_contributions(username, from_date=None, to_date=None, **kwargs)`** — a ready-made query built on `execute_graphql`. Fetches a 365-day contribution calendar (with a weekly breakdown) plus the user's 5 most recent pull requests and issues. `from_date`/`to_date` must be ISO 8601 strings (e.g. `"2025-01-01T00:00:00Z"`) and are optional. Returns:
+
+```python
+{
+    "recent_contributions_365_days": {
+        "total_contributions": ...,
+        "weeks": [...],
+    },
+    "lifetime_activity": {
+        "pull_requests": {"total_count": ..., "recent_items": [...]},
+        "issues": {"total_count": ..., "recent_items": [...]},
+    },
+}
+```
+
+## Full Profile Aggregation
+
+```python
+profile = gh.fetch_full_profile_data("torvalds")
+```
+
+`fetch_full_profile_data(username, **kwargs)` combines everything above into one call:
+
+1. Fetches contribution data via `get_user_contributions()`.
+2. Fetches up to 100 recently-updated repos via `get_user_repos()`.
+3. Builds a `language_breakdown` — a count of repos per primary `language` (not byte totals; use `get_aggregate_user_languages()` for that).
+4. Checks README presence for the top 5 owned repos via `check_top_repos_readmes()`, and attaches `has_readme` (`True`/`False`/`None` if outside the top 5) onto each repo object.
+
+Returns:
+
+```python
+{
+    "username": ...,
+    "repositories": {
+        "items": [...],                # each repo now has a "has_readme" key
+        "language_breakdown": {...},
+    },
+    "recent_contributions_365_days": {...},
+    "lifetime_activity": {...},
+    "readme_statuses": {...},
+}
+```
+
+## Errors
+
+Every method here inherits `BaseAPIClient`'s exception handling — `RateLimitError`, `AuthenticationError`, `ClientError`, `ServerError`, and `RequestTimeoutError` all subclass `HakiAPIError`:
+
+```python
+from hakiapi.core.exceptions import RateLimitError, HakiAPIError
+
+try:
+    gh.get_user("torvalds")
+except RateLimitError as e:
+    print(f"Rate limited — retry after {e.retry_after}s")
+except HakiAPIError as e:
+    print(f"GitHub API error: {e}")
+```

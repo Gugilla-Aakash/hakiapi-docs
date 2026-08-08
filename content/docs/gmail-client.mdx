@@ -1,0 +1,85 @@
+# Gmail Client
+
+`GmailClient` is a bundled HakiAPI client for the Google Gmail API v1, built on top of `BaseAPIClient`. Unlike `GitHubClient`, it uses **resource-based routing** — instead of flat methods on the client itself, related endpoints are grouped under `.profile`, `.labels`, and `.messages` attributes.
+
+## Initialization
+
+```python
+from hakiapi import GmailClient
+
+# token is required — GmailClient has no unauthenticated mode
+gmail = GmailClient(token=access_token)
+```
+
+- `base_url` is fixed to `https://gmail.googleapis.com/gmail/v1/`.
+- `token` is required (unlike `GitHubClient`, it isn't optional) and is always wrapped in `BearerTokenAuth`.
+- The token must be a valid OAuth 2.0 access token with Gmail API scope — see [Interactive OAuth 2.0](#interactive-oauth-20-google) below for getting one via `GoogleOAuthFlow`.
+
+Supports the context manager protocol like every `BaseAPIClient` subclass:
+
+```python
+with GmailClient(token=access_token) as gmail:
+    gmail.profile.get()
+```
+
+## Resources
+
+On construction, `GmailClient` attaches three resource objects, each scoped to a slice of the Gmail API:
+
+| Resource | Attribute | Wraps |
+|---|---|---|
+| `GmailProfileResource` | `gmail.profile` | `users/{id}/profile` |
+| `GmailLabelsResource` | `gmail.labels` | `users/{id}/labels` |
+| `GmailMessagesResource` | `gmail.messages` | `users/{id}/messages` |
+
+Every resource method takes `user_id` as a keyword-or-positional argument, defaulting to `"me"` (the authenticated user) — you only need to pass a different value when acting on another mailbox you have delegated access to.
+
+### `profile` — `GmailProfileResource`
+
+```python
+gmail.profile.get()                 # defaults to user_id="me"
+gmail.profile.get(user_id="me")
+```
+
+`get(user_id="me", **kwargs)` fetches the Gmail profile (email address, message/thread totals, history ID) for the given user.
+
+### `labels` — `GmailLabelsResource`
+
+```python
+gmail.labels.list()
+```
+
+`list(user_id="me", **kwargs)` fetches all labels in the mailbox — both system labels (`INBOX`, `SENT`, `SPAM`, ...) and any user-created ones.
+
+### `messages` — `GmailMessagesResource`
+
+```python
+gmail.messages.get(message_id)                 # a single message, full payload
+gmail.messages.list(max_pages=2)                # auto-paginated generator
+gmail.messages.search("is:unread")              # auto-paginated generator with a query
+gmail.messages.send({"raw": base64_rfc2822_string})
+```
+
+- **`get(message_id, user_id="me", **kwargs)`** fetches the full payload of one message by ID.
+- **`list(user_id="me", max_pages=None, **kwargs)`** lazily yields messages by delegating straight to the shared `paginate()` helper against `users/{user_id}/messages`. Pass `max_pages` to cap how many pages are fetched; omit it to walk every page.
+- **`search(query, user_id="me", max_pages=None, **kwargs)`** is `list()` with a `q` query param attached — pass standard Gmail search syntax (`"is:unread"`, `"from:someone@example.com"`, `"has:attachment"`, etc.). Also returns a lazy, auto-paginated generator.
+- **`send(payload, user_id="me", **kwargs)`** sends a message. `payload` must be a dict with a `raw` key holding a base64url-encoded RFC 2822 message — the client does not build or encode the MIME message for you.
+
+## Errors
+
+`GmailClient` inherits `BaseAPIClient`'s exception handling, so the same typed hierarchy applies:
+
+```python
+from hakiapi.core.exceptions import AuthenticationError, RateLimitError, HakiAPIError
+
+try:
+    gmail.messages.list(max_pages=1)
+except AuthenticationError:
+    print("Access token missing, expired, or lacks Gmail scope.")
+except RateLimitError as e:
+    print(f"Rate limited — retry after {e.retry_after}s")
+except HakiAPIError as e:
+    print(f"Gmail API error: {e}")
+```
+
+An expired OAuth access token surfaces as `AuthenticationError` (`401`/`403`) — pair `GmailClient` with `GoogleOAuthFlow` and `refresh_access_token()` (see the main HakiAPI docs on OAuth 2.0) to keep a long-running process authenticated without manual re-consent.
