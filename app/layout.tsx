@@ -29,13 +29,14 @@ export const metadata: Metadata = {
     title: "HakiAPI — Production-Grade Python SDKs",
     description:
       "The resilient engine for your API integrations. Built-in OAuth2, circuit breakers, and retries.",
-    url: "https://yourusername.github.io/HakiAPI",
+    url: "https://hakiapi-docs.hakiapi.workers.dev/",
     siteName: "HakiAPI Documentation",
     images: [
       {
-        url: "/og-image.png", // We will assume you add a cool image here later
+        url: "/og-image.png",
         width: 1200,
         height: 630,
+        alt: "HakiAPI - Production-Grade Python SDKs",
       },
     ],
     locale: "en_US",
@@ -46,6 +47,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "HakiAPI — High Reliability API Client Engine",
     description: "Stop rewriting API boilerplate. Use HakiAPI.",
+    images: ["/og-image.png"],
   },
 };
 
