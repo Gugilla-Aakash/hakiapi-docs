@@ -4,20 +4,20 @@
 
 ## Documentation
 
-- [Introduction](https://hakiapi.pages.dev/docs/introduction): Overview of HakiAPI, core goals, and why resilient API clients matter.
-- [Installation](https://hakiapi.pages.dev/docs/installation): How to install HakiAPI using pip or poetry.
-- [Quick Start](https://hakiapi.pages.dev/docs/quick-start): Build your first resilient API client in under 5 minutes.
-- [Authentication](https://hakiapi.pages.dev/docs/auth): Managing API keys, tokens, and secure headers.
-- [Retries & Exponential Backoff](https://hakiapi.pages.dev/docs/retry): Configuring automatic retry logic for transient network failures.
-- [Paginator](https://hakiapi.pages.dev/docs/paginator): Handling cursor-based and offset pagination automatically.
-- [Exceptions & Error Mapping](https://hakiapi.pages.dev/docs/exceptions): Standardized exception handling across different HTTP status codes.
-- [Circuit Breaker](https://hakiapi.pages.dev/docs/circuit-breaker): Protecting downstream systems from cascading failures.
-- [Async Client](https://hakiapi.pages.dev/docs/async-client): Building high-performance asynchronous API clients with asyncio.
-- [OAuth 2.0 Engine](https://hakiapi.pages.dev/docs/oauth): Full OAuth flows with token refresh and persistent token storage.
+- [Introduction](https://hakiapi-docs.hakiapi.workers.dev/docs/introduction): Overview of HakiAPI, core goals, and why resilient API clients matter.
+- [Installation](https://hakiapi-docs.hakiapi.workers.dev/docs/installation): How to install HakiAPI using pip or poetry.
+- [Quick Start](https://hakiapi-docs.hakiapi.workers.dev/docs/quick-start): Build your first resilient API client in under 5 minutes.
+- [Authentication](https://hakiapi-docs.hakiapi.workers.dev/docs/auth): Managing API keys, tokens, and secure headers.
+- [Retries & Exponential Backoff](https://hakiapi-docs.hakiapi.workers.dev/docs/retry): Configuring automatic retry logic for transient network failures.
+- [Paginator](https://hakiapi-docs.hakiapi.workers.dev/docs/paginator): Handling cursor-based and offset pagination automatically.
+- [Exceptions & Error Mapping](https://hakiapi-docs.hakiapi.workers.dev/docs/exceptions): Standardized exception handling across different HTTP status codes.
+- [Circuit Breaker](https://hakiapi-docs.hakiapi.workers.dev/docs/circuit-breaker): Protecting downstream systems from cascading failures.
+- [Async Client](https://hakiapi-docs.hakiapi.workers.dev/docs/async-client): Building high-performance asynchronous API clients with asyncio.
+- [OAuth 2.0 Engine](https://hakiapi-docs.hakiapi.workers.dev/docs/oauth): Full OAuth flows with token refresh and persistent token storage.
 
 ## Bundled Clients & Examples
 
-- [GitHub Client](https://hakiapi.pages.dev/docs/github-client): GraphQL-powered GitHub client implementation.
-- [Gmail & Calendar Client](https://hakiapi.pages.dev/docs/gmail-client): Production SDK examples for Google Workspace integrations.
-- [Architecture](https://hakiapi.pages.dev/architecture): Complete lifecycle breakdown of an API request through HakiAPI.
-- [Roadmap](https://hakiapi.pages.dev/roadmap): Version history, release philosophy, and upcoming features like the Predictive Rate-Limit Governor.
+- [GitHub Client](https://hakiapi-docs.hakiapi.workers.dev/docs/github-client): GraphQL-powered GitHub client implementation.
+- [Gmail & Calendar Client](https://hakiapi-docs.hakiapi.workers.dev/docs/gmail-client): Production SDK examples for Google Workspace integrations.
+- [Architecture](https://hakiapi-docs.hakiapi.workers.dev/architecture): Complete lifecycle breakdown of an API request through HakiAPI.
+- [Roadmap](https://hakiapi-docs.hakiapi.workers.dev/roadmap): Version history, release philosophy, and upcoming features like the Predictive Rate-Limit Governor.
