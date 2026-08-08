@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Base Scale */
+    --radius-sm: 0.25rem;  /* 4px */
+    --radius-md: 0.5rem;   /* 8px */
+    --radius-lg: 0.75rem;  /* 12px */
+
+    /* Light Theme Tokens */
+    --background: #ffffff;
+    --surface: #f8fafc;
+    --surface-hover: #f1f5f9;
+    
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    
+    --brand-primary: #1e40af; /* Calm, deep trustworthy blue */
+    --brand-hover: #1e3a8a;
+    
+    --border: #e2e8f0;
+    --code-bg: #f1f5f9;
+    
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+
+    --shadow-floating: 0 4px 20px -2px rgba(15, 23, 42, 0.08);
+  }
+
+  /* Default Dark Mode Target */
+  .dark,
+  :root:not(.light) {
+    --background: #090d16;
+    --surface: #111726;
+    --surface-hover: #1a2236;
+    
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    
+    --brand-primary: #3b82f6; /* Slate blue accent for dark mode high contrast */
+    --brand-hover: #60a5fa;
+    
+    --border: #1e293b;
+    --code-bg: #0d1322;
+    
+    --success: #34d399;
+    --warning: #fbbf24;
+    --error: #f87171;
+
+    --shadow-floating: 0 4px 24px -2px rgba(0, 0, 0, 0.5);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--text-primary);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+
+  code, pre, kbd {
+    font-family: var(--font-geist-mono), monospace;
+  }
+  /* --- Modern Sleek Scrollbars --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+}
