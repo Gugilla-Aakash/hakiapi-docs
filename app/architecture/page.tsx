@@ -1,28 +1,29 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { ArrowLeft, Github } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { ArchitectureFlow } from "@/components/landing/ArchitectureFlow";
 import { DocsHeaderNav } from "@/components/docs/DocsHeaderNav";
 
-export default function ArchitecturePage() {
-  const router = useRouter();
+export const metadata: Metadata = {
+  title: "Architecture",
+};
 
+export default function ArchitecturePage() {
   return (
     <PageContainer size="wide" className="py-12 md:py-20">
       
       {/* Top Action Bar: Back Button & GitHub Link */}
       <div className="flex items-center justify-between mb-8">
-        <button
-          onClick={() => router.back()}
+        <Link
+          href="/docs"
           className="group flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-white transition-colors"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 group-hover:bg-white/10 transition-colors">
             <ArrowLeft className="h-4 w-4" />
           </div>
           <span>Back</span>
-        </button>
+        </Link>
 
         <a
           href="https://github.com/Gugilla-Aakash/hakiapi"

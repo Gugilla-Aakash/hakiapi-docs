@@ -1,16 +1,19 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { ArrowLeft, Github } from "lucide-react";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { DocsHeaderNav } from "@/components/docs/DocsHeaderNav";
+
+export const metadata: Metadata = {
+  title: "Roadmap",
+};
 
 type Status = "released" | "in-progress" | "vision";
 
 type Feature = {
   title: string;
   description: string;
-  progress?: number; // 0-100, only shown for in-progress items
+  progress?: number;
 };
 
 type Milestone = {
@@ -50,12 +53,6 @@ const STATUS_STYLES: Record<
     badgeBorder: "border-purple-500/30",
     bar: "bg-purple-500",
   },
-};
-
-const STATUS_LABEL: Record<Status, string> = {
-  released: "Released",
-  "in-progress": "In Progress",
-  vision: "Vision",
 };
 
 const MILESTONES: Milestone[] = [
@@ -215,7 +212,6 @@ function MilestoneCard({ milestone, isLast }: { milestone: Milestone; isLast: bo
 
   return (
     <div className="relative pl-10 sm:pl-14">
-      {/* Timeline rail */}
       <div
         className={`absolute left-0 sm:left-1 top-1 h-4 w-4 rounded-full border-2 border-[var(--background)] ${styles.dot} ring-4 ring-[var(--background)]`}
       />
@@ -251,22 +247,18 @@ function MilestoneCard({ milestone, isLast }: { milestone: Milestone; isLast: bo
 }
 
 export default function RoadmapPage() {
-  const router = useRouter();
-
   return (
     <PageContainer className="py-12 md:py-20 max-w-4xl">
-      
-      {/* Top Action Bar: Back Button & GitHub Link */}
       <div className="flex items-center justify-between mb-8">
-        <button
-          onClick={() => router.back()}
+        <Link
+          href="/docs"
           className="group flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-white transition-colors"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 group-hover:bg-white/10 transition-colors">
             <ArrowLeft className="h-4 w-4" />
           </div>
           <span>Back</span>
-        </button>
+        </Link>
 
         <a
           href="https://github.com/Gugilla-Aakash/hakiapi"
@@ -292,7 +284,6 @@ export default function RoadmapPage() {
         next, and where we're headed.
       </p>
 
-      {/* Timeline: released + in-progress */}
       <div>
         {MILESTONES.map((milestone, i) => (
           <MilestoneCard
@@ -303,7 +294,6 @@ export default function RoadmapPage() {
         ))}
       </div>
 
-      {/* Future Vision — separated from the committed roadmap */}
       <div className="mt-4 pt-10 border-t border-[var(--border)]">
         <div className="flex flex-wrap items-center gap-3 mb-1">
           <h3 className="text-2xl font-bold text-[var(--text-primary)]">Beyond v2.2</h3>
@@ -325,7 +315,6 @@ export default function RoadmapPage() {
         </div>
       </div>
 
-      {/* Release philosophy */}
       <div className="mt-14 p-6 border border-[var(--border)] rounded-[var(--radius-lg)] bg-[var(--surface)]">
         <h3 className="font-semibold text-[var(--text-primary)] mb-2">Release philosophy</h3>
         <p className="text-[var(--text-secondary)]">
