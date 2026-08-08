@@ -9,6 +9,8 @@ import { DocsPagination } from "@/components/docs/DocsPagination";
 import { TableOfContents } from "@/components/docs/TableOfContents";
 import { DocsActionBar } from "@/components/docs/DocsActionBar"; // <-- 1. Import the action bar
 
+export const dynamicParams = false;
+
 interface PageProps {
   params: Promise<{
     slug?: string[];

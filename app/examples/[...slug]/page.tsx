@@ -6,7 +6,7 @@ import { compileMDX } from "next-mdx-remote/rsc";
 import remarkGfm from "remark-gfm";
 import { mdxComponents } from "@/components/docs/MDXComponents";
 import { TableOfContents } from "@/components/docs/TableOfContents";
-
+export const dynamicParams = false;
 interface PageProps {
   params: Promise<{
     slug?: string[];
