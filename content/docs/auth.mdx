@@ -1,0 +1,140 @@
+---
+title: Authentication
+description: Five drop-in auth strategies for every HakiAPI client — Bearer, API keys, HMAC signing, and OAuth 2.0.
+---
+
+# Authentication
+
+Every real API needs a different flavor of authentication, and reimplementing header-signing logic for the tenth time is exactly the kind of boilerplate HakiAPI exists to kill. All five strategies below are plain `requests.auth.AuthBase` subclasses — pass one to your client's `auth` parameter and every outgoing request is signed automatically.
+
+<Callout type="note" title="Drop-in, not baked-in">
+Because every strategy is a standard `AuthBase`, they work with `BaseAPIClient`, `AsyncBaseAPIClient`, and even a raw `requests.Session` — you're never locked into HakiAPI's request layer to use them.
+</Callout>
+
+---
+
+## Bearer Token
+
+The most common case: a static token sent as `Authorization: Bearer <token>`.
+
+```python
+from hakiapi.core.auth import BearerTokenAuth
+from hakiapi import BaseAPIClient
+
+client = BaseAPIClient(
+    base_url="https://api.example.com",
+    auth=BearerTokenAuth(token="your-static-token"),
+)
+```
+
+Every request made through `client` now carries the `Authorization` header — no manual header-setting anywhere in your endpoint methods.
+
+---
+
+## Header API Key
+
+For APIs that expect the key in a custom header instead of `Authorization` — think `X-API-Key`, `Api-Key`, or a vendor-specific name.
+
+```python
+from hakiapi.core.auth import HeaderApiKeyAuth
+
+auth = HeaderApiKeyAuth(header_name="X-API-Key", api_key="your-api-key")
+```
+
+`header_name` is entirely up to you — `HeaderApiKeyAuth` just sets whatever header name you give it to the key you give it, on every request.
+
+---
+
+## Query API Key
+
+Some APIs — often older or simpler ones — expect the key as a query parameter rather than a header.
+
+```python
+from hakiapi.core.auth import QueryApiKeyAuth
+
+auth = QueryApiKeyAuth(param_name="api_key", api_key="your-api-key")
+```
+
+`QueryApiKeyAuth` appends `param_name=api_key` onto the request URL, preserving any existing query string and duplicate keys rather than clobbering them.
+
+---
+
+## HMAC Signing
+
+For APIs that require request signing — proving both who you are *and* that the request body wasn't tampered with in transit — `HmacAuth` signs each request with HMAC-SHA256.
+
+```python
+from hakiapi.core.auth import HmacAuth
+
+auth = HmacAuth(
+    api_key="your-api-key",
+    secret_key="your-secret-key",
+)
+```
+
+On every request, `HmacAuth`:
+
+1. Builds a signing string from the HTTP method, the request path, a Unix timestamp, and the request body, joined by newlines.
+2. Signs that string with HMAC-SHA256 using your `secret_key`.
+3. Attaches the API key, timestamp, and hex-encoded signature as headers.
+
+<Callout type="info" title="Customizable header names">
+By default the headers are `X-API-Key`, `X-Signature`, and `X-Timestamp` — override `api_key_header`, `signature_header`, and `timestamp_header` in the constructor if your API expects different names.
+</Callout>
+
+```python
+auth = HmacAuth(
+    api_key="your-api-key",
+    secret_key="your-secret-key",
+    api_key_header="X-Custom-Key",
+    signature_header="X-Custom-Signature",
+    timestamp_header="X-Custom-Timestamp",
+)
+```
+
+<Callout type="warning" title="Streaming bodies aren't supported">
+`HmacAuth` needs the full request body up front to compute a signature — it raises `TypeError` if it receives a streaming body it can't read into bytes.
+</Callout>
+
+---
+
+## OAuth 2.0
+
+`OAuth2Auth` wires a `GoogleOAuthFlow` (or any object exposing `get_token()`) directly into your client's auth layer. It calls `get_token()` on every request — loading a cached token, refreshing it, or triggering an interactive login as needed — and injects the result as a Bearer token.
+
+```python
+from hakiapi.core.auth import OAuth2Auth
+from hakiapi.core.oauth.google import GoogleOAuthFlow
+from hakiapi.core.oauth.token_store import FileTokenStore
+
+flow = GoogleOAuthFlow(
+    client_id="...",
+    client_secret="...",
+    scopes=["https://www.googleapis.com/auth/calendar.readonly"],
+    store=FileTokenStore("token.json"),
+)
+
+auth = OAuth2Auth(flow=flow)
+```
+
+<Callout type="info">
+This is a thinner integration than calling `oauth_flow.get_token()` yourself and passing the raw access token — see the [Quick Start](/quickstart) for that approach with `GoogleCalendarClient`. Use `OAuth2Auth` when you want the token refresh to happen transparently on every request rather than once up front.
+</Callout>
+
+---
+
+## Choosing a Strategy
+
+| If your API expects... | Use |
+|---|---|
+| `Authorization: Bearer <token>` | `BearerTokenAuth` |
+| A custom header with a static key | `HeaderApiKeyAuth` |
+| A key as a query parameter | `QueryApiKeyAuth` |
+| Signed requests (HMAC-SHA256) | `HmacAuth` |
+| Google OAuth 2.0, refreshed automatically | `OAuth2Auth` |
+
+## What's Next?
+
+- Learn how [retries and the circuit breaker](/resilience) work alongside your auth layer.
+- See the full [OAuth 2.0 flow](/oauth) for interactive Google authentication.
+- Explore [creating a custom client](/quickstart#4-creating-a-custom-client) that uses one of these strategies.

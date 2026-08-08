@@ -1,0 +1,146 @@
+---
+title: Quick Start
+description: Get up and running with HakiAPI in under 5 minutes.
+---
+
+# Quick Start
+
+The fastest way to understand **HakiAPI** is to see it in action. Whether you need a plug-and-play client for Google or GitHub, or a custom SDK for your internal microservices, HakiAPI gives you production-grade resilience out of the box — no extra configuration required.
+
+<Callout type="note" title="Zero-Config Resilience">
+Every request made through a HakiAPI client automatically benefits from **exponential backoff retries**, **typed exception handling**, and — where you opt in — **circuit breaker protection**. You don't wire any of it up yourself.
+</Callout>
+
+---
+
+## 1. Interactive OAuth 2.0 (Google Calendar)
+
+`GoogleOAuthFlow.get_token()` checks the token store first. If a valid, non-expired token is already saved, it's returned immediately — otherwise it opens your browser, runs the full consent flow, and persists the result for next time.
+
+```python
+import os
+from dotenv import load_dotenv
+from hakiapi.clients.google_calendar import GoogleCalendarClient
+from hakiapi.core.oauth.google import GoogleOAuthFlow
+from hakiapi.core.oauth.token_store import FileTokenStore
+
+# Load variables from your .env file into os.environ
+load_dotenv()
+
+# 1. Set up the flow and the token vault
+oauth_flow = GoogleOAuthFlow(
+    client_id=os.environ["GOOGLE_CLIENT_ID"],
+    client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+    scopes=["https://www.googleapis.com/auth/calendar.readonly"],
+    store=FileTokenStore("my_secure_token.json"),
+    redirect_port=8765,  # must match an authorized redirect URI in Google Cloud Console
+)
+
+# 2. get_token() returns the cached token if it's still valid,
+#    otherwise it opens the browser and runs the full consent flow.
+token = oauth_flow.get_token()
+
+# 3. Initialize your client with the raw access token
+with GoogleCalendarClient(token=token.access_token) as calendar:
+    for event in calendar.events.upcoming(max_results=3):
+        print(event.get("summary"))
+```
+
+<Callout type="warning" title="No silent refresh by default">
+`get_token()` re-runs the interactive consent flow when the stored token is missing or expired — it does not silently refresh it. For non-interactive refreshes using a saved `refresh_token`, call `refresh_access_token()` from `hakiapi.core.oauth.refresh` explicitly.
+</Callout>
+
+---
+
+## 2. Using a Bundled Client (GitHub)
+
+HakiAPI ships with pre-configured SDKs for popular services. Here's `GitHubClient` walking every page of a user's public repos — no page numbers, no `while` loop, no manual `Link` header parsing:
+
+```python
+from hakiapi.clients.github import GitHubClient
+
+with GitHubClient() as github:
+    # Lazily walks every page of the user's public repos
+    for repo in github.get_all_user_repos("torvalds"):
+        print(repo["name"])
+```
+
+`paginate()` runs underneath this call and auto-detects Link-header, `data`/`meta.next_token`, and `items`/`nextPageToken` pagination styles — you never touch it directly.
+
+---
+
+## 3. Async Requests (`httpx`-based)
+
+Need to fire off requests concurrently? `AsyncBaseAPIClient` mirrors the sync client method-for-method, just with `async`/`await` — same retry engine, same typed exceptions.
+
+```python
+import asyncio
+
+from hakiapi.core.async_base_client import AsyncBaseAPIClient
+
+
+async def main():
+    async with AsyncBaseAPIClient(
+        base_url="https://api.github.com",
+        timeout=15,
+        max_retries=3,
+    ) as client:
+        user = await client.get("users/torvalds")
+        print(user["name"])
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+<Callout type="info">
+Make sure `httpx` is installed first — see [Installation](/installation) if you skipped the async extra.
+</Callout>
+
+---
+
+## 4. Creating a Custom Client
+
+To build an SDK for any third-party REST API or internal microservice, subclass `BaseAPIClient`, point it at a base URL, and define your endpoints as plain methods. Authentication, retries, timeout handling, and typed exceptions are inherited automatically:
+
+```python
+from hakiapi import BaseAPIClient
+
+
+class WeatherClient(BaseAPIClient):
+    def __init__(self, **kwargs):
+        super().__init__(base_url="https://api.open-meteo.com/v1", **kwargs)
+
+    def get_weather(self, latitude: float, longitude: float):
+        return self.get(
+            "forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "current_weather": True,
+            },
+        )
+
+
+if __name__ == "__main__":
+    # Hyderabad, Telangana, India
+    with WeatherClient() as client:
+        weather = client.get_weather(latitude=17.385, longitude=78.4867)
+        print(weather["current_weather"])
+```
+
+`BaseAPIClient` exposes `get`, `post`, `put`, `patch`, and `delete`, all routed through `_request()` — which handles the retry-mounted session, timeout errors, status-code-to-exception mapping, and JSON/text response parsing.
+
+---
+
+## What's Next?
+
+Now that you've created your first HakiAPI client, you can explore more advanced capabilities:
+
+- Learn how to configure retries, timeouts, and the circuit breaker.
+- Add authentication providers such as API keys, HMAC signing, or OAuth.
+- Create reusable clients for your internal services.
+- Handle pagination, rate limits, and error responses gracefully.
+- Explore the bundled `GitHubClient`, `GmailClient`, and `GoogleCalendarClient` in depth.
+
+Continue to the next guide to learn how to customize HakiAPI for your production workloads.
