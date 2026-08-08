@@ -1,0 +1,130 @@
+---
+title: Roadmap
+description: Future feature additions and core architectural releases for HakiAPI.
+---
+
+# HakiAPI Roadmap
+
+Our mission is to make HakiAPI the default infrastructure core for Python API SDKs — and increasingly, for the agentic workloads built on top of them. Here's what's shipped, what's next, and where we're headed.
+
+## v1.0 — Public API Foundation
+
+<Callout type="note" title="Released">
+The base client and public API surface every later SDK is built on top of.
+</Callout>
+
+<Grid cols={2} gap="md">
+  <Card>
+    ### 🚀 Public API Surface Upgrade
+    Cleaned up and stabilized the client's public interface (`v1.0.5`) ahead of the SDK integrations that followed.
+  </Card>
+  <Card>
+    ### 🧱 Core Client Bump
+    Foundational fixes and version cleanup (`v1.0.4`).
+  </Card>
+</Grid>
+
+## v1.1 – v1.2 — Gmail & Calendar Integration
+
+<Callout type="note" title="Released">
+The first production SDKs on top of HakiAPI's core: Gmail and Google Calendar.
+</Callout>
+
+<Grid cols={3} gap="md">
+  <Card>
+    ### ✉️ GmailClient
+    Initial `GmailClient` release for reading and managing Gmail via the API (`v1.1.0`).
+  </Card>
+  <Card>
+    ### 🗂️ Gmail Resource Routing & Central Pagination
+    Reworked Gmail into resource-based routing with a shared pagination core (`v1.2.0`).
+  </Card>
+  <Card>
+    ### 📅 GoogleCalendarClient
+    New Calendar API client built on the same pagination core as Gmail (`v1.2.2`).
+  </Card>
+</Grid>
+
+## v2.0 — OAuth 2.0 Engine & Token Vault
+
+<Callout type="note" title="Released">
+A real auth layer: token refresh, persistent storage, and pagination hardening.
+</Callout>
+
+<Grid cols={2} gap="md">
+  <Card>
+    ### 🔐 Google OAuth 2.0 Engine & Token Vault
+    Full OAuth 2.0 flow with a persistent, atomic token store backing the Gmail and Calendar clients (`v2.0.0`).
+  </Card>
+  <Card>
+    ### 🛠️ Paginator Bug Fix
+    Fixed a pagination bug surfaced by the new OAuth engine (`v2.0.1`).
+  </Card>
+</Grid>
+
+## v2.1 — GitHub Client & Async Core
+
+<Callout type="note" title="Released">
+A GraphQL-powered GitHub client, plus an async-first rewrite of the base client.
+</Callout>
+
+<Grid cols={2} gap="md">
+  <Card>
+    ### 🐙 GitHub Client (GraphQL)
+    New GitHub client built on GraphQL instead of REST (`v2.1.0`).
+  </Card>
+  <Card>
+    ### ⚡ Async Base Client
+    Async-native base client, plus daily/weekly contribution stats in the GitHub client (`v2.1.2`).
+  </Card>
+</Grid>
+
+## v2.2 — Predictive Rate-Limit Governor
+
+<Callout type="info" title="Next Up">
+Built for agentic RAG and multi-agent workflows, where parallel tool calls can burn through rate limits fast. Turns HakiAPI from a passive client into a proactive traffic controller that paces requests before a 429 ever happens.
+</Callout>
+
+<Grid cols={2} gap="md">
+  <Card>
+    ### 📡 Proactive Header Inspection
+    Reads remaining-quota and reset-time headers off every response to track consumption velocity in real time.
+  </Card>
+  <Card>
+    ### 🪣 Token Bucket Sliding Window
+    Tracks usage per endpoint in an internal sliding window, not just a global counter.
+  </Card>
+  <Card>
+    ### 🐢 Smart Local Throttling
+    Paces and pauses outgoing requests locally for a micro-duration when velocity approaches a threshold, so the 429 never fires.
+  </Card>
+  <Card>
+    ### 🔗 Circuit Breaker Synergy
+    Pairs with HakiAPI's client-side circuit breaker: the breaker fast-fails on cascading 5xx outages while the Governor prevents 429s from happening in the first place.
+  </Card>
+</Grid>
+
+## Beyond v2.2 — Future Vision
+
+<Callout type="note" title="Vision, not yet scheduled">
+Experimental ideas we're excited about — not guaranteed, not on a timeline.
+</Callout>
+
+<Grid cols={3} gap="md">
+  <Card>
+    ### 🛒 SDK Marketplace
+    A registry of community-maintained clients built on the HakiAPI core.
+  </Card>
+  <Card>
+    ### 🧬 OpenAPI Codegen
+    Generate a fully typed HakiAPI client directly from an OpenAPI spec.
+  </Card>
+  <Card>
+    ### 🕸️ Agent-Aware Observability
+    Tracing built around multi-agent call graphs, not just single request/response pairs.
+  </Card>
+</Grid>
+
+## Release philosophy
+
+HakiAPI follows a stability-first release cycle. Core infrastructure is completed before new API integrations are added, ensuring every client inherits a consistent, well-tested foundation.

@@ -1,0 +1,157 @@
+---
+title: System Architecture
+description: How HakiAPI routes requests through its internal layers
+---
+
+# System Architecture
+
+Every request goes through the same pipeline. Whether you're calling `GitHubClient.get_user()` or hitting a custom endpoint directly, the request passes through the same validation, authentication, retry, and parsing layers before it ever reaches the network — and the same layers on the way back.
+
+## Without HakiAPI
+
+Talking to an API directly with `requests` means handling all of this yourself, every time:
+
+```text
+requests.get()
+     │
+     ▼
+manual retries
+     │
+     ▼
+manual auth
+     │
+     ▼
+manual JSON parsing
+     │
+     ▼
+manual error handling
+     │
+     ▼
+manual pagination
+     │
+     ▼
+manual OAuth
+     │
+     ▼
+manual timeout handling
+```
+
+With HakiAPI, that entire chain collapses into one call:
+
+```text
+GitHubClient.get_user()
+     │
+     ▼
+   Done.
+```
+
+The pipeline described below is what makes that possible — it's not magic, it's a fixed set of layers every request passes through.
+
+## The request pipeline
+
+```text
+User Code
+     │
+     ▼
+GitHubClient
+     │
+     ▼
+BaseAPIClient
+     │
+     ├── SSRF Validation
+     │
+     ├── Authentication
+     │
+     ├── Retry Adapter
+     │
+     ├── HTTP Session
+     │
+     ▼
+Network
+     │
+     ▼
+Response
+     │
+     ├── Retry?
+     │
+     ├── Parse JSON
+     │
+     ├── Exception Mapping
+     │
+     ▼
+Python Object
+```
+
+Each layer has exactly one job, and each is independently testable and replaceable.
+
+## Request lifecycle
+
+Concretely, here's what happens inside `_request()` on a single call to `client.get()`:
+
+```text
+client.get()
+     │
+     ▼
+_validate_endpoint()
+     │
+     ▼
+prepare URL
+     │
+     ▼
+inject authentication
+     │
+     ▼
+requests.Session.request()
+     │
+     ▼
+Retry middleware
+     │
+     ▼
+HTTP response
+     │
+     ▼
+JSON parsing
+     │
+     ▼
+Exception mapping
+     │
+     ▼
+return dict
+```
+
+## Core philosophy
+
+`BaseAPIClient` isn't just "the class that makes HTTP requests" — it exists to guarantee that every client built on top of it behaves consistently. Rather than each API client reimplementing retries, auth injection, and error handling on its own, that logic lives in one place, once, and every client inherits it for free. New clients only need to define what's unique to their API — everything else is already handled.
+
+## Sync and async
+
+The pipeline above describes the sync client, but the same behavior is mirrored for async use:
+
+```text
+BaseAPIClient
+     │
+     ▼
+requests
+──────────────
+AsyncBaseAPIClient
+     │
+     ▼
+httpx.AsyncClient
+```
+
+`AsyncBaseAPIClient` goes through the same validation, authentication, retry, and parsing layers — it's built on `httpx.AsyncClient` instead of `requests`, but the request lifecycle is otherwise identical.
+
+## Circuit breaker
+
+The circuit breaker is available to protect against cascading failures when a downstream API is degraded — but it is **not automatic**. It has to be explicitly attached to a client. Without it, every client behaves exactly as described above, with no circuit-breaking logic in the path.
+
+## Minimal dependencies
+
+**Core**
+- ✓ `requests`
+- ✓ `urllib3`
+
+**Async**
+- ✓ `httpx`
+
+That's the entire dependency footprint — no bundled HTTP framework, no hidden transitive dependencies pulling in unrelated tooling.
